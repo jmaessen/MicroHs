@@ -2,9 +2,9 @@
 -- See LICENSE file for full license.
 module MicroHs.IntMap(
   IntMap,
-  empty, lookup, insert, fromList, toList, insertWith, (!), keys
+  empty, lookup, insert, fromList, toList, insertWith, (!), keys, filter
   ) where
-import qualified Prelude(); import MHSPrelude hiding(lookup)
+import qualified Prelude(); import MHSPrelude hiding(lookup, filter)
 
 data IntMap a
   = Empty
@@ -53,6 +53,15 @@ insert = insertWith const
 
 fromList :: forall a . [(Int, a)] -> IntMap a
 fromList = foldr (uncurry insert) empty
+
+filter :: forall a . (a -> Bool) -> IntMap a -> IntMap a
+filter p (Node a b c d) = node (filter p a) (filter p b) (filter p c) (filter p d)
+filter p l@(Leaf _ a) | p a = l
+filter _ _ = Empty
+
+node :: forall a . IntMap a -> IntMap a -> IntMap a -> IntMap a -> IntMap a
+node Empty Empty Empty Empty = Empty
+node a b c d = Node a b c d
 
 -- XXX There must be a better way
 toList :: forall a . IntMap a -> [(Int, a)]

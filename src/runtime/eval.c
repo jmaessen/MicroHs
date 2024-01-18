@@ -252,7 +252,7 @@ iswindows(void)
 #endif
 
 #if !defined(STACK_SIZE)
-#define STACK_SIZE 100000
+#define STACK_SIZE 1000000
 #endif
 
 #if !defined(ERR)
@@ -2232,7 +2232,7 @@ printrec(BFILE *f, struct print_bits *pb, NODEPTR n, int prefix)
     break;
   case T_PTR:
     if (prefix) {
-      char b[200]; sprintf(b,"PTR<%p>",PTR(n));
+      char b[200]; snprintf(b,199,"PTR<%p>",PTR(n));
       putsb(b, f);
     } else {
       ERR("Cannot serialize pointers");
@@ -2784,7 +2784,6 @@ evalbytestring(NODEPTR n)
       buf[offs++] = c;
       n = ARG(n);
     } else {
-      //pp(stdout, n);
       ERR("evalbytestring not Nil/Cons");
     }
   }

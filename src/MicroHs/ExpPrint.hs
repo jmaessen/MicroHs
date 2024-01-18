@@ -7,6 +7,7 @@ import MicroHs.Desugar(LDef)
 import MicroHs.EncodeData(encList)
 import MicroHs.Exp
 import MicroHs.Expr(Lit(..), showLit, errorMessage, HasLoc(..))
+import MicroHs.HashCons(hashCons)
 import MicroHs.Ident(Ident, showIdent, mkIdent, showSLoc)
 import MicroHs.List(groupSort)
 import MicroHs.State
@@ -17,11 +18,10 @@ import MicroHs.TypeCheck(isInstId)
 combVersion :: String
 combVersion = "v7.2\n"
 
--- Rename (to a numbers) top level definitions and remove unused ones.
--- Also check for duplicated instances.
 toStringCMdl :: (Ident, [LDef]) -> (Int, String)
-toStringCMdl (mainName, ds) =
+toStringCMdl (mainName, ds0) =
   let
+    ds = if True then hashCons ds0 else ds0
     dMap = M.fromList ds
     -- Shake the tree bottom-up, serializing nodes as we see them.
     -- This is much faster than (say) computing the sccs and walking that.
@@ -54,7 +54,7 @@ toStringCMdl (mainName, ds) =
     def r (i, e) =
       ("A " ++) . toStringP (substv e) . ((":" ++ show i ++  " @\n") ++) . r . ("@" ++)
   in
-    case dupInstances ds of
+    case dupInstances ds0 of
       (n1 : n2 : _) : _ -> errorMessage (getSLoc n1) $ "Duplicate instance " ++ unmangleInst (showIdent n1) ++ " at " ++ showSLoc (getSLoc n2)
       _ -> (ndefs, combVersion ++ show ndefs ++ "\n" ++ res " }")
 
