@@ -1489,7 +1489,7 @@ putdblb(flt_t x, BFILE *p)
   putsb(str, p);
 }
 
-void printrec(BFILE *f, NODEPTR n, int prefix);
+void printrec(BFILE *f, NODEPTR n, int prefix, int funpos);
 
 /* Mark all reachable nodes, when a marked node is reached, mark it as shared. */
 void
@@ -1547,7 +1547,7 @@ print_string(BFILE *f, struct ustring *p)
    This assumes that the shared nodes has been marked as such.
 */
 void
-printrec(BFILE *f, NODEPTR n, int prefix)
+printrec(BFILE *f, NODEPTR n, int prefix, int funpos)
 {
   while (GETTAG(n) == T_IND) {
     //putb('*', f);
@@ -1581,14 +1581,14 @@ printrec(BFILE *f, NODEPTR n, int prefix)
   switch (GETTAG(n)) {
   case T_AP:
     if (prefix) {
-      putb('(', f);
-      printrec(f, FUN(n), prefix);
+      if (!funpos) putb('(', f);
+      printrec(f, FUN(n), prefix, 1);
       putb(' ', f);
-      printrec(f, ARG(n), prefix);
-      putb(')', f);
+      printrec(f, ARG(n), prefix, 0);
+      if (!funpos) putb(')', f);
     } else {
-      printrec(f, FUN(n), prefix);
-      printrec(f, ARG(n), prefix);
+      printrec(f, FUN(n), prefix, 0);
+      printrec(f, ARG(n), prefix, 0);
       putb('@', f);
     }
     break;
@@ -1602,12 +1602,12 @@ printrec(BFILE *f, NODEPTR n, int prefix)
       putb(']', f);
       for(size_t i = 0; i < ARR(n)->size; i++) {
         putb(' ', f);
-        printrec(f, ARR(n)->array[i], prefix);
+        printrec(f, ARR(n)->array[i], prefix, 0);
       }
     } else {
       /* Arrays serialize as 'e_1 ... e_sz [sz]' */
       for(size_t i = 0; i < ARR(n)->size; i++) {
-        printrec(f, ARR(n)->array[i], prefix);
+        printrec(f, ARR(n)->array[i], prefix, 0);
       }
       putb('[', f);
       putdecb((value_t)ARR(n)->size, f);
@@ -1622,7 +1622,7 @@ printrec(BFILE *f, NODEPTR n, int prefix)
     else if (PTR(n) == stderr)
       putsb("IO.stderr", f);
     else
-      ERR("Cannot serialize pointers");
+      putsb("<ptr>", f); // ERR("Cannot serialize pointers");
     break;
   case T_STR:
     print_string(f, STR(n));
@@ -1758,7 +1758,7 @@ printb(BFILE *f, NODEPTR n, int header)
     putdecb(num_shared, f);
     putb('\n', f);
   }
-  printrec(f, n, !header);
+  printrec(f, n, !header, 0);
   if (header) {
     putb('}', f);
   }
