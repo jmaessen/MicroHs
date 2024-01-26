@@ -293,7 +293,7 @@ enum node_tag { T_FREE, T_IND, T_AP, T_INT, T_DBL, T_PTR, T_FUNPTR, T_FORPTR, T_
                 T_BSAPPENDDOT,
                 T_LAST_TAG,
 };
-#if 0
+#if 1
 static const char* tag_names[] = {
   "FREE", "IND", "AP", "INT", "DBL", "PTR", "FUNPTR", "FORPTR", "BADDYN", "ARR",
   "S", "K", "I", "B", "C",
@@ -476,6 +476,7 @@ stackptr_t stack_size = STACK_SIZE;
 
 counter_t num_marked;
 counter_t max_num_marked = 0;
+counter_t total_num_marked = 0;
 counter_t num_free;
 counter_t num_arr_alloc;
 counter_t num_arr_free;
@@ -493,6 +494,7 @@ bits_t *free_map;             /* 1 bit per node, 0=free, 1=used */
 heapoffs_t free_map_nwords;
 heapoffs_t next_scan_index;
 heapoffs_t next_mark_index; /* bitmap based mark finger during GC */
+heapoffs_t mark_debug_index;
 
 int want_gc_red = 0;
 
@@ -661,6 +663,7 @@ static INLINE void mark_all_free(void)
   memset(free_map, ~0, free_map_nwords * sizeof(bits_t));
   next_scan_index = heap_start;
   next_mark_index = heap_start;
+  mark_debug_index = 0;
 }
 
 #if WANT_ARGS
@@ -1044,7 +1047,7 @@ init_nodes(void)
 }
 
 #if GCRED
-int red_a, red_k, red_i, red_int, red_flip;
+int red_a, red_k, red_i, red_int, red_flip, red_in, red_in2, fwd_gc, back_gc = 0;
 #endif
 int red_bb, red_k4, red_k3, red_k2, red_ccb, red_z, red_r;
 
@@ -1068,52 +1071,78 @@ mark(NODEPTR *np)
   //    PRINT("mark depth %"PRIcounter"\n", mark_depth);
  top:
   n = *np;
-  tag = GETTAG(n);
-  if (tag == T_IND) {
+  if ((tag = GETTAG(n)) == T_IND) {
+  while ((tag = GETTAG(n)) == T_IND) {
+  #if GCRED
+    red_in++;
+  #endif
+    n = INDIR(n);
 #if SANITY
-    int loop = 0;
-    /* Skip indirections, and redirect start pointer */
-    while ((tag = GETTAG(n)) == T_IND) {
-      //      PRINT("*"); fflush(stdout);
-      n = INDIR(n);
-      if (loop++ > 10000000) {
-        //PRINT("%p %p %p\n", n, INDIR(n), INDIR(INDIR(n)));
-        ERR("IND loop");
-      }
+    tag = GETTAG(n);
+    if (tag != T_IND) {
+      break;
     }
-    //    if (loop)
-    //      PRINT("\n");
-#else  /* SANITY */
-    while ((tag = GETTAG(n)) == T_IND) {
-      n = INDIR(n);
+#if GCRED
+    red_in++;
+    red_in2++;
+#endif
+    n = INDIR(n);
+    if (*np == n) {
+      ERR("IND loop");
     }
-#endif  /* SANITY */
     *np = n;
+#endif
+  }
+  *np = n;
   }
   if (n < cells || n > cells + heap_size)
     ERR("bad n");
   if (is_marked_used(n)) {
     goto fin;
   }
+  if (np >= &FUN(cells) && np < &FUN(cells + heap_size)) {
+    if (np <= &FUN(n)) {
+      fwd_gc++;
+    } else {
+      back_gc++;
+    }
+  }
   num_marked++;
   mark_used(n);
+<<<<<<< variant A
   if (n >= cells + next_mark_index) {
     /* The finger will mark it later. */
+>>>>>>> variant B
+  if (0 && n >= cells + next_mark_index) {
+    // The finger will mark it later.
+    // TODO: consider GCRED first.
+======= end
     goto fin;
   }
   switch (tag) {
 #if GCRED
    case T_INT:
+     if (next_mark_index == mark_debug_index)
+       PRINT("T_INT\n");
 #if INTTABLE
     if (LOW_INT <= (val = GETVALUE(n)) && val < HIGH_INT) {
+     if (next_mark_index == mark_debug_index)
+       PRINT("T_INTI\n");
       SETTAG(n, T_IND);
-      INDIR(n) = intTable[val - LOW_INT];
+      *np = INDIR(n) = intTable[val - LOW_INT];
       red_int++;
-      goto top;
+     if (next_mark_index == mark_debug_index)
+       PRINT("T_INTF\n");
+      goto fin;
+    } else {
+     if (next_mark_index == mark_debug_index)
+       PRINT("T_INTB\n");
     }
     goto fin;
 #endif  /* INTTABLE */
    case T_AP:
+      if (next_mark_index == mark_debug_index)
+        PRINT("T_AP\n");
       if (want_gc_red) {
         /* This is really only fruitful just after parsing.  It can be removed. */
         if (GETTAG(FUN(n)) == T_AP && GETTAG(FUN(FUN(n))) == T_A) {
@@ -1166,6 +1195,8 @@ mark(NODEPTR *np)
       }
 #else   /* GCRED */
    case T_AP:
+      if (next_mark_index == mark_debug_index)
+        PRINT("T_AP\n");
 #endif  /* GCRED */
     /* Avoid tail recursion */
     np = &FUN(n);
@@ -1173,6 +1204,8 @@ mark(NODEPTR *np)
     break;
    case T_ARR:
     {
+      if (next_mark_index == mark_debug_index)
+        PRINT("T_ARR\n");
       struct ioarray *arr = ARR(n);
 
       // arr->marked records marking progress through arr.
@@ -1181,6 +1214,7 @@ mark(NODEPTR *np)
       }
       // We unmark the array as a whole and push it as long
       // as there's more entries to scan.
+      num_marked--;
       mark_unused(n);
       num_marked--;
       to_push = np;
@@ -1188,10 +1222,14 @@ mark(NODEPTR *np)
       break;
     }
    case T_FORPTR:
+     if (next_mark_index == mark_debug_index)
+       PRINT("T_FORPTR\n");
      FORPTR(n)->finalizer->marked = 1;
      goto fin;
 
    default:
+     if (next_mark_index == mark_debug_index)
+       PRINT("t_default\n");
      goto fin;
   }
 
@@ -1238,6 +1276,7 @@ gc(void)
         mark(&arr->array[i]);
     }
   }
+<<<<<<< variant A
   /* The above just set mark bits.  Now sweep through the heap
    * marking nodes we find, setting marks ahead of the next_mark_index
    * and recursing behind it.
@@ -1265,10 +1304,32 @@ gc(void)
       if (!is_marked_used(cells + next_mark_index - 1)) {
         ERR("unused!");
       }
+>>>>>>> variant B
+  for (; next_mark_index < heap_size; next_mark_index++) {
+    NODEPTR n = cells + next_mark_index;
+    if (!is_marked_used(n)) {
+      continue;
+    }
+    if (next_mark_index == mark_debug_index) {
+      PRINT("Found used %lu\n", next_mark_index);
+    }
+    num_marked--;
+    mark_unused(n);
+    mark(&n);
+    // n might have had an indir removed by small int table,
+    // keep the indir around.
+    if (n != cells + next_mark_index) {
+      n = cells + next_mark_index;
+      num_marked++;
+      mark_used(n);
+    } else if (!is_marked_used(cells + next_mark_index)) {
+      ERR("unused!");
+======= end
     }
   }
   gc_mark_time += GETTIMEMILLI();
 
+  total_num_marked += num_marked;
   if (num_marked > max_num_marked)
     max_num_marked = num_marked;
   num_free = heap_size - heap_start - num_marked;
@@ -2323,7 +2384,7 @@ printrec(BFILE *f, struct print_bits *pb, NODEPTR n, int prefix)
     break;
   case T_PTR:
     if (prefix) {
-      char b[200]; sprintf(b,"PTR<%p>",PTR(n));
+      char b[200]; snprintf(b,199,"PTR<%p>",PTR(n));
       putsb(b, f);
     } else {
       ERR("Cannot serialize pointers");
@@ -4592,6 +4653,7 @@ MAIN
     PRINT("%"PCOMMA"15"PRIcounter" cells allocated (%"PCOMMA".1f Mbyte/s)\n", num_alloc, num_alloc * NODE_SIZE / ((double)run_time / 1000) / 1000000);
     PRINT("%"PCOMMA"15"PRIcounter" GCs\n", num_gc);
     PRINT("%"PCOMMA"15"PRIcounter" max cells used\n", max_num_marked);
+    PRINT("%"PCOMMA"15"PRIcounter" total cells marked\n", total_num_marked);
     PRINT("%"PCOMMA"15"PRIcounter" reductions (%"PCOMMA".1f Mred/s)\n", num_reductions, num_reductions / ((double)run_time / 1000) / 1000000);
     PRINT("%"PCOMMA"15"PRIcounter" array alloc\n", num_arr_alloc);
     PRINT("%"PCOMMA"15"PRIcounter" array free\n", num_arr_free);
@@ -4613,6 +4675,7 @@ MAIN
 #if GCRED
     PRINT(" GC reductions A=%d, K=%d, I=%d, int=%d flip=%d\n", red_a, red_k, red_i, red_int, red_flip);
     PRINT(" special reductions B'=%d K4=%d K3=%d K2=%d C'B=%d, Z=%d, R=%d\n", red_bb, red_k4, red_k3, red_k2, red_ccb, red_z, red_r);
+    PRINT(" fwd=%d back=%d in=%d in2=%d\n",fwd_gc, back_gc, red_in, red_in2);
 #endif
   }
 #endif  /* WANT_STDIO */

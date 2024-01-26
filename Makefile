@@ -19,7 +19,7 @@ GHCINCS= -ighc -isrc -ipaths
 GHCWARNS= -Wall -Wno-unrecognised-warning-flags -Wno-x-partial -Wno-deprecations
 GHCOPTS= -O
 GHCEXTS= -XScopedTypeVariables -XTypeSynonymInstances -XMultiParamTypeClasses -XFlexibleInstances
-GHCPKGS= -package mtl -package pretty -package haskeline -package process -package time -package ghc-prim -package containers -package deepseq -package directory -package text
+GHCPKGS= -package mtl -package pretty -package haskeline -package process -package time -package ghc-prim -package containers -package deepseq -package directory -package text -package bytestring -package filepath
 GHCTOOL= # -F -pgmF Tools/convertX.sh
 GHCOUTDIR= ghc-out
 GHCOUT= -outputdir $(GHCOUTDIR)
@@ -173,10 +173,12 @@ bin/umhs: bin/mhs
 timecompile: bin/mhs
 	@date
 	@git rev-parse HEAD
-	time bin/mhs +RTS -v -RTS -s $(MHSINC) $(MAINMODULE)
+	time bin/mhs +RTS -v -v -RTS -s $(MHSINC) $(MAINMODULE)
 
 #
 timecachecompile: bin/mhs
+	@date
+	@git rev-parse HEAD
 	@-rm -f .mhscache
 	time bin/mhs +RTS -v -RTS -CW AllOfLib
 	time bin/mhs +RTS -v -RTS -CR -s $(MHSINC) $(MAINMODULE)
