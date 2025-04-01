@@ -251,7 +251,7 @@ iswindows(void)
 
 #if !defined(ERR)
 #if WANT_STDIO
-#define ERR(s)    do { fprintf(stderr,"ERR: "s"\n");   EXIT(1); } while(0)
+#define ERR(s)    do { fflush(NULL); fprintf(stderr,"ERR: "s"\n");   EXIT(1); } while(0)
 #define ERR1(s,a) do { fprintf(stderr,"ERR: "s"\n",a); EXIT(1); } while(0)
 #else  /* WANT_STDIO */
 #define ERR(s) EXIT(1)
@@ -1071,7 +1071,6 @@ mark(NODEPTR *np)
   //    PRINT("mark depth %"PRIcounter"\n", mark_depth);
  top:
   n = *np;
-  if ((tag = GETTAG(n)) == T_IND) {
   while ((tag = GETTAG(n)) == T_IND) {
   #if GCRED
     red_in++;
@@ -1094,7 +1093,7 @@ mark(NODEPTR *np)
 #endif
   }
   *np = n;
-  }
+
   if (n < cells || n > cells + heap_size)
     ERR("bad n");
   if (is_marked_used(n)) {
@@ -1109,40 +1108,22 @@ mark(NODEPTR *np)
   }
   num_marked++;
   mark_used(n);
-<<<<<<< variant A
   if (n >= cells + next_mark_index) {
     /* The finger will mark it later. */
->>>>>>> variant B
-  if (0 && n >= cells + next_mark_index) {
-    // The finger will mark it later.
-    // TODO: consider GCRED first.
-======= end
     goto fin;
   }
   switch (tag) {
 #if GCRED
    case T_INT:
-     if (next_mark_index == mark_debug_index)
-       PRINT("T_INT\n");
 #if INTTABLE
     if (LOW_INT <= (val = GETVALUE(n)) && val < HIGH_INT) {
-     if (next_mark_index == mark_debug_index)
-       PRINT("T_INTI\n");
       SETTAG(n, T_IND);
       *np = INDIR(n) = intTable[val - LOW_INT];
       red_int++;
-     if (next_mark_index == mark_debug_index)
-       PRINT("T_INTF\n");
-      goto fin;
-    } else {
-     if (next_mark_index == mark_debug_index)
-       PRINT("T_INTB\n");
     }
     goto fin;
 #endif  /* INTTABLE */
    case T_AP:
-      if (next_mark_index == mark_debug_index)
-        PRINT("T_AP\n");
       if (want_gc_red) {
         /* This is really only fruitful just after parsing.  It can be removed. */
         if (GETTAG(FUN(n)) == T_AP && GETTAG(FUN(FUN(n))) == T_A) {
@@ -1195,8 +1176,6 @@ mark(NODEPTR *np)
       }
 #else   /* GCRED */
    case T_AP:
-      if (next_mark_index == mark_debug_index)
-        PRINT("T_AP\n");
 #endif  /* GCRED */
     /* Avoid tail recursion */
     np = &FUN(n);
@@ -1204,8 +1183,6 @@ mark(NODEPTR *np)
     break;
    case T_ARR:
     {
-      if (next_mark_index == mark_debug_index)
-        PRINT("T_ARR\n");
       struct ioarray *arr = ARR(n);
 
       // arr->marked records marking progress through arr.
@@ -1214,7 +1191,6 @@ mark(NODEPTR *np)
       }
       // We unmark the array as a whole and push it as long
       // as there's more entries to scan.
-      num_marked--;
       mark_unused(n);
       num_marked--;
       to_push = np;
@@ -1222,14 +1198,10 @@ mark(NODEPTR *np)
       break;
     }
    case T_FORPTR:
-     if (next_mark_index == mark_debug_index)
-       PRINT("T_FORPTR\n");
      FORPTR(n)->finalizer->marked = 1;
      goto fin;
 
    default:
-     if (next_mark_index == mark_debug_index)
-       PRINT("t_default\n");
      goto fin;
   }
 
@@ -1276,7 +1248,6 @@ gc(void)
         mark(&arr->array[i]);
     }
   }
-<<<<<<< variant A
   /* The above just set mark bits.  Now sweep through the heap
    * marking nodes we find, setting marks ahead of the next_mark_index
    * and recursing behind it.
@@ -1304,27 +1275,6 @@ gc(void)
       if (!is_marked_used(cells + next_mark_index - 1)) {
         ERR("unused!");
       }
->>>>>>> variant B
-  for (; next_mark_index < heap_size; next_mark_index++) {
-    NODEPTR n = cells + next_mark_index;
-    if (!is_marked_used(n)) {
-      continue;
-    }
-    if (next_mark_index == mark_debug_index) {
-      PRINT("Found used %lu\n", next_mark_index);
-    }
-    num_marked--;
-    mark_unused(n);
-    mark(&n);
-    // n might have had an indir removed by small int table,
-    // keep the indir around.
-    if (n != cells + next_mark_index) {
-      n = cells + next_mark_index;
-      num_marked++;
-      mark_used(n);
-    } else if (!is_marked_used(cells + next_mark_index)) {
-      ERR("unused!");
-======= end
     }
   }
   gc_mark_time += GETTIMEMILLI();
