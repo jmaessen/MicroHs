@@ -492,6 +492,7 @@ counter_t num_bs_inuse_max;
 bits_t *free_map;             /* 1 bit per node, 0=free, 1=used */
 heapoffs_t free_map_nwords;
 heapoffs_t next_scan_index;
+heapoffs_t next_mark_index; /* bitmap based mark finger during GC */
 
 int want_gc_red = 0;
 
@@ -659,6 +660,7 @@ static INLINE void mark_all_free(void)
 {
   memset(free_map, ~0, free_map_nwords * sizeof(bits_t));
   next_scan_index = heap_start;
+  next_mark_index = heap_start;
 }
 
 #if WANT_ARGS
@@ -1064,7 +1066,7 @@ mark(NODEPTR *np)
   //  mark_depth++;
   //  if (mark_depth % 10000 == 0)
   //    PRINT("mark depth %"PRIcounter"\n", mark_depth);
-  top:
+ top:
   n = *np;
   tag = GETTAG(n);
   if (tag == T_IND) {
@@ -1095,6 +1097,10 @@ mark(NODEPTR *np)
   }
   num_marked++;
   mark_used(n);
+  if (n >= cells + next_mark_index) {
+    /* The finger will mark it later. */
+    goto fin;
+  }
   switch (tag) {
 #if GCRED
    case T_INT:
@@ -1232,6 +1238,35 @@ gc(void)
         mark(&arr->array[i]);
     }
   }
+  /* The above just set mark bits.  Now sweep through the heap
+   * marking nodes we find, setting marks ahead of the next_mark_index
+   * and recursing behind it.
+   * Assumes next_mark_index initially points at heap_start, which
+   * is aligned with the mark words. */
+  heapoffs_t mark_outer = next_mark_index / BITS_PER_WORD;
+  for (; mark_outer < heap_size / BITS_PER_WORD; mark_outer++) {
+    bits_t mask = ~0; // Candidate bits
+    bits_t masked_word; // Inverted from the free_map to flag *marked*.
+    // We frequently mark new bits in the word as we work.  Reload.
+    while ((masked_word = ~free_map[mark_outer] & mask) != 0) {
+      heapoffs_t i = FFS(masked_word) - 1;
+      mask = masked_word ^ (-masked_word);
+      next_mark_index = mark_outer * BITS_PER_WORD + i;
+      NODEPTR n = cells + next_mark_index;
+      // PRINT("%lu <- %lu %lx %lx %lu\n", next_mark_index, mark_outer, masked_word, mask, i);
+      if (!is_marked_used(n)) {
+        PRINT("%lu:\n", next_mark_index);
+        ERR("Not marked used");
+      }
+      next_mark_index++;
+      mark_unused(n);
+      num_marked--;
+      mark(&n);
+      if (!is_marked_used(cells + next_mark_index - 1)) {
+        ERR("unused!");
+      }
+    }
+  }
   gc_mark_time += GETTIMEMILLI();
 
   if (num_marked > max_num_marked)
@@ -1298,7 +1333,7 @@ gc(void)
 #if WANT_STDIO
   if (verbose > 1) {
     PRINT("gc done, %"PRIcounter" free\n", num_free);
-    //PRINT(" GC reductions A=%d, K=%d, I=%d, int=%d flip=%d\n", red_a, red_k, red_i, red_int, red_flip);
+    PRINT(" GC reductions A=%d, K=%d, I=%d, int=%d flip=%d\n", red_a, red_k, red_i, red_int, red_flip);
   }
   if (gcbell) {
     fputc('\007', stderr);      /* ring the bell */
