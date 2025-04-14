@@ -261,7 +261,7 @@ iswindows(void)
 
 enum node_tag { T_FREE, T_IND, T_AP, T_INT, T_DBL, T_PTR, T_FUNPTR, T_FORPTR, T_BADDYN, T_ARR,
                 T_S, T_K, T_I, T_B, T_C,
-                T_A, T_Y, T_SS, T_BB, T_CC, T_P, T_R, T_O, T_U, T_Z,
+                T_A, T_Y, T_SS, T_BB, T_CC, T_P, T_T, T_R, T_O, T_U, T_Z,
                 T_K2, T_K3, T_K4, T_CCB,
                 T_ADD, T_SUB, T_MUL, T_QUOT, T_REM, T_SUBR, T_UQUOT, T_UREM, T_NEG,
                 T_AND, T_OR, T_XOR, T_INV, T_SHL, T_SHR, T_ASHR,
@@ -696,7 +696,7 @@ new_ap(NODEPTR f, NODEPTR a)
 
 /* Needed during reduction */
 NODEPTR intTable[HIGH_INT - LOW_INT];
-NODEPTR combK, combTrue, combUnit, combCons, combPair;
+NODEPTR combK, combTrue, combUnit, combCons, combPair, combTup;
 NODEPTR combCC, combZ, combIOBIND, combIORETURN, combIOCCBIND, combB, combC;
 NODEPTR combLT, combEQ, combGT;
 NODEPTR combShowExn, combU, combK2, combK3;
@@ -737,6 +737,7 @@ struct {
   { "K3", T_K3 },
   { "K4", T_K4 },
   { "C'B", T_CCB },
+  { "T", T_T },
 /* primops */
   { "+", T_ADD, T_ADD },
   { "-", T_SUB, T_SUBR },
@@ -901,6 +902,7 @@ init_nodes(void)
     case T_I: combUnit = n; break;
     case T_O: combCons = n; break;
     case T_P: combPair = n; break;
+    case T_T: combTup = n; break;
     case T_CC: combCC = n; break;
     case T_B: combB = n; break;
     case T_C: combC = n; break;
@@ -2185,11 +2187,11 @@ printrec(BFILE *f, struct print_bits *pb, NODEPTR n, int prefix)
   switch (GETTAG(n)) {
   case T_AP:
     if (prefix) {
-      putb('(', f);
-      printrec(f, pb, FUN(n), prefix);
+      if (1 || prefix == 1) { putb('(', f); }
+      printrec(f, pb, FUN(n), 2);
       putb(' ', f);
-      printrec(f, pb, ARG(n), prefix);
-      putb(')', f);
+      printrec(f, pb, ARG(n), 1);
+      if (1 || prefix == 1) { putb(')', f); }
     } else {
       printrec(f, pb, FUN(n), prefix);
       printrec(f, pb, ARG(n), prefix);
@@ -2278,6 +2280,7 @@ printrec(BFILE *f, struct print_bits *pb, NODEPTR n, int prefix)
   case T_U: putsb("U", f); break;
   case T_Y: putsb("Y", f); break;
   case T_P: putsb("P", f); break;
+  case T_T: putsb("T", f); break;
   case T_R: putsb("R", f); break;
   case T_O: putsb("O", f); break;
   case T_SS: putsb("S'", f); break;
@@ -3237,7 +3240,9 @@ evali(NODEPTR an)
   case T_S:    GCCHECK(2); CHKARG3; GOAP2(x, z, new_ap(y, z));                            /* S x y z = x z (y z) */
   case T_SS:   GCCHECK(3); CHKARG4; GOAP2(x, new_ap(y, w), new_ap(z, w));                 /* S' x y z w = x (y w) (z w) */
   case T_K:                CHKARG2; GOIND(x);                                             /* K x y = *x */
-  case T_A:                CHKARG2; GOIND(y);                                             /* A x y = *y */
+  case T_A:    if (!HASNARGS(2)) {
+                           CHKARG1; GOIND(combUnit); } else {                             /* A x = *I */
+                           CHKARG2; GOIND(y); }                                           /* A x y = *y */
   case T_U:                CHKARG2; GOAP(y, x);                                           /* U x y = y x */
   case T_I:                CHKARG1; GOIND(x);                                             /* I x = *x */
   case T_Y:                CHKARG1; GOAP(x, n);                                           /* n@(Y x) = x n */
@@ -3251,6 +3256,25 @@ evali(NODEPTR an)
   case T_C:    GCCHECK(1); CHKARG3; GOAP2(x, z, y);                                       /* C x y z = x z y */
   case T_CC:   GCCHECK(2); CHKARG4; GOAP2(x, new_ap(y, w), z);                            /* C' x y z w = x (y w) z */
   case T_P:    GCCHECK(1); CHKARG3; GOAP2(z, x, y);                                       /* P x y z = z x y */
+  case T_T:    { CHKARG1;                                                                 /* T i x1 ... xi k = k x1 ... xi */
+                 uvalue_t i = (uvalue_t)GETVALUE(x);
+                 if (GETTAG(x) != T_INT) {
+                   // NOTE: only happens in interpreter with re-processed graph.
+                   // That graph (see Translate.trans) is a hot mess.
+                   i = evalint(x);
+                 }
+                 CHECK(i+1);
+                 GCCHECK(i-1);
+                 POP(i+1);
+                 n = TOP(-1);
+                 x = ARG(n);
+                 for (; i > 1; i--) {
+                   y = ARG(TOP(-i-1));
+                   x = new_ap(x, y);
+                 }
+                 y = ARG(TOP(-2));
+                 GOAP(x, y);
+               }
   case T_R:    if(!HASNARGS(3)) {
                GCCHECK(1); CHKARG2; COUNT(red_r); GOAP2(combC, y, x); } else {            /* R x y = C y x */
                GCCHECK(1); CHKARG3; GOAP2(y, z, x); }                                     /* R x y z = y z x */
@@ -4283,7 +4307,7 @@ execio(NODEPTR *np)
       RETIO(combUnit);
 
     default:
-      //printf("bad tag %s\n", tag_names[GETTAG(n)]);
+      printf("bad tag %s\n", tag_names[GETTAG(n)]);
       ERR1("execio tag %d", GETTAG(n));
     }
   }

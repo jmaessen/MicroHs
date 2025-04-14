@@ -48,14 +48,20 @@ cFlip = Lit (LPrim "C")
 instance Show Exp where
   show = render . ppExp
 
+data PPCtxt = Rator | Rand | LamBody
+  deriving (Eq)
+
 ppExp :: Exp -> Doc
-ppExp ae =
-  case ae of
---    Let i e b -> sep [ text "let" <+> ppIdent i <+> text "=" <+> ppExp e, text "in" <+> ppExp b ]
-    Var i -> ppIdent i
-    App f a -> parens $ ppExp f <+> ppExp a
-    Lam i e -> parens $ text "\\" <> ppIdent i <> text "." <+> ppExp e
-    Lit l -> text (showLit l)
+ppExp = ppE Rand where
+  par True r = parens r
+  par False r = r
+  ppE rand ae =
+    case ae of
+      --    Let i e b -> sep [ text "let" <+> ppIdent i <+> text "=" <+> ppExp e, text "in" <+> ppExp b ]
+      Var i -> ppIdent i
+      App f a -> par (rand == Rand) $ ppE Rator f <+> ppE Rand a
+      Lam i e -> par (rand /= LamBody) $ text "\\" <> ppIdent i <> text "." <+> ppE LamBody e
+      Lit l -> text (showLit l)
 
 substExp :: Ident -> Exp -> Exp -> Exp
 substExp si se ae =
@@ -100,4 +106,3 @@ lams xs e = foldr Lam e xs
 
 apps :: Exp -> [Exp] -> Exp
 apps f = foldl App f
-

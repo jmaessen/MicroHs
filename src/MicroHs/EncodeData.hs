@@ -76,7 +76,7 @@ encConstrScott i n ss =
     strict (False:ys) (_:is) e = strict ys is e
     strict (True:ys)  (x:is) e = app2 (Lit (LPrim "seq")) (Var x) (strict ys is e)
     strict _ _ e = e
-  in lams xs $ strict ss xs $ lams fs $ apps (Var f) (map Var xs)
+  in lams xs $ strict ss xs $ lams fs $ (cTuple (Var f) (map Var xs))
 
 encIfScott :: Exp -> Exp -> Exp -> Exp
 encIfScott c t e = app2 c e t
@@ -91,6 +91,18 @@ cCons = Lit (LPrim "O")
 -- XXX could use encConstr
 cNil :: Exp
 cNil = Lit (LPrim "K")
+
+-- Constructor for n-ary tuple
+-- App costs given n:
+-- 1: 0
+-- 2: 2
+-- n: n + 1
+-- (Standard combinator encoding is 2n - 2)
+cTuple :: Exp -> [Exp] -> Exp
+cTuple k [] = k
+cTuple k [x] = App k x
+cTuple k [x,y] = app3 (Lit (LPrim "P")) x y k -- Pair
+cTuple k xs = App (apps (Lit (LPrim "T")) (Lit (LInt (length xs)) : xs)) k
 
 -------------------------------------------
 
@@ -115,7 +127,7 @@ encConstrNo i _n ss =
   in lams xs $ strict ss xs $ tuple [Lit (LInt i), tuple (map Var xs)]
 
 tuple :: [Exp] -> Exp
-tuple es = Lam f $ apps (Var f) es
+tuple es = Lam f $ cTuple (Var f) es
   where f = -- newIdent "$t" es --
             mkIdent "$t"
 
