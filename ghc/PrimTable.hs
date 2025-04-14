@@ -43,6 +43,7 @@ primOps =
   , comb "Y" (\ f -> let r = f r in r)
   , comb "Z" (\ f g _x -> f g)
   , comb "P" (\ x y f -> f x y)
+  , comb "T" t
   , comb "R" (\ x y f -> y f x)
   , comb "O" (\ x y _g f -> f x y)
   , comb "K2" (\ x _y _z -> x)
@@ -137,6 +138,8 @@ primOps =
 
   ]
   where
+    t (2::Int) = unsafeCoerce (\x y f -> f x y) -- P
+    t n = unsafeCoerce (\g x -> (t (n-1)) x g) -- C (t (n-1))
     comb0 n f = (n, unsafeCoerce f)
     comb n f = (n, unsafeCoerce f)
 --    comb n f = (n, unsafeCoerce (\ x -> trace (seq x n) (f x)))
