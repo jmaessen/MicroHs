@@ -989,7 +989,7 @@ init_nodes(void)
 #if GCRED
 counter_t red_a, red_k, red_i, red_int, red_flip;
 #endif
-counter_t red_bb, red_k4, red_k3, red_k2, red_ccb, red_z, red_r;
+counter_t red_bb, red_k4, red_k3, red_k2, red_ccb, red_z;
 
 //counter_t mark_depth;
 //counter_t max_mark_depth = 0;
@@ -1054,10 +1054,10 @@ mark(NODEPTR *np)
    case T_AP:
       if (want_gc_red) {
         /* This is really only fruitful just after parsing.  It can be removed. */
-        if (GETTAG(FUN(n)) == T_AP && GETTAG(FUN(FUN(n))) == T_A) {
-          /* Do the A x y --> y reduction */
-          NODEPTR y = ARG(n);
-          SETINDIR(n, y);
+        if (GETTAG(FUN(n)) == T_A) {
+          /* Do the A x --> I reduction */
+          SETTAG(n, T_IND);
+          SETINDIR(n, combUnit);
           COUNT(red_a);
           goto top;
         }
@@ -3071,8 +3071,10 @@ evali(NODEPTR an)
 
 #define SETIND(n, x) SETINDIR(n, x)
 #define GOIND(x) do { NODEPTR _x = (x); SETIND(n, _x); n = _x; goto top; } while(0)
-#define GOAP(f,a) do { FUN((n)) = (f); ARG((n)) = (a); goto ap; } while(0)
+#define SETAP(f,a) do { FUN(n) = (f); ARG(n) = (a); } while(0)
+#define GOAP(f,a) do { SETAP(f,a); goto ap; } while(0)
 #define GOAP2(f,a,b) do { FUN((n)) = new_ap((f), (a)); ARG((n)) = (b); goto ap2; } while(0)
+#define CONTAP(f,a,lbl) do { SETAP(f,a); PUSH(n); n = (f); goto lbl; } while (0)
 /* CHKARGN checks that there are at least N arguments.
  * It also
  *  - sets n to the "top" node
@@ -3139,35 +3141,33 @@ evali(NODEPTR an)
    */
   case T_S:    GCCHECK(2); CHKARG3; GOAP2(x, z, new_ap(y, z));                            /* S x y z = x z (y z) */
   case T_SS:   GCCHECK(3); CHKARG4; GOAP2(x, new_ap(y, w), new_ap(z, w));                 /* S' x y z w = x (y w) (z w) */
-  case T_K:                CHKARG2; GOIND(x);                                             /* K x y = *x */
-  case T_A:                CHKARG2; GOIND(y);                                             /* A x y = *y */
+  case T_K4:               CHKARG2; COUNT(red_k4); CONTAP(combK3, x, t_k3);               /* K4 x y = K3 x */
+  case T_K3: t_k3:         CHKARG2; COUNT(red_k3); CONTAP(combK2, x, t_k2);               /* K3 x y = K2 x */
+  case T_K2: t_k2:         CHKARG2; COUNT(red_k2); CONTAP(combK, x, t_k);                 /* K2 x y = K x */
+  case T_K: t_k:           CHKARG2; GOIND(x);                                             /* K x y = *x */
   case T_U:                CHKARG2; GOAP(y, x);                                           /* U x y = y x */
-  case T_I:                CHKARG1; GOIND(x);                                             /* I x = *x */
+  case T_A:                CHKARG1; COUNT(red_a); SETIND(n, combUnit); goto t_i;          /* A x = I */
+  case T_I: t_i:           CHKARG1; GOIND(x);                                             /* I x = *x */
   case T_Y:                CHKARG1; GOAP(x, n);                                           /* n@(Y x) = x n */
   case T_B:    GCCHECK(1); CHKARG3; GOAP(x, new_ap(y, z));                                /* B x y z = x (y z) */
   case T_BB:   if (!HASNARGS(4)) {
                GCCHECK(1); CHKARG2; COUNT(red_bb); GOAP(combB, new_ap(x, y)); } else {    /* B' x y = B (x y) */
                GCCHECK(2); CHKARG4; GOAP2(x, y, new_ap(z, w)); }                          /* B' x y z w = x y (z w) */
   case T_Z:    if (!HASNARGS(3)) {
-               GCCHECK(1); CHKARG2; COUNT(red_z); GOAP(combK, new_ap(x, y)); } else {     /* Z x y = K (x y) */
+               // NOTE: enabling this first rule unconditionally
+               // causes the compiler to die during bootstrap!  Why?
+               // It increases full laziness, but shouldn't change semantics.
+               GCCHECK(1); CHKARG2; COUNT(red_z); GOAP(combK, new_ap(x, y)); } else {          /* Z x y = K (x y) */
                            CHKARG3; GOAP(x, y); }                                         /* Z x y z = x y */
   case T_C:    GCCHECK(1); CHKARG3; GOAP2(x, z, y);                                       /* C x y z = x z y */
   case T_CC:   GCCHECK(2); CHKARG4; GOAP2(x, new_ap(y, w), z);                            /* C' x y z w = x (y w) z */
   case T_P:    GCCHECK(1); CHKARG3; GOAP2(z, x, y);                                       /* P x y z = z x y */
-  case T_R:    if(!HASNARGS(3)) {
-               GCCHECK(1); CHKARG2; COUNT(red_r); GOAP2(combC, y, x); } else {            /* R x y = C y x */
-               GCCHECK(1); CHKARG3; GOAP2(y, z, x); }                                     /* R x y z = y z x */
+  case T_R:    GCCHECK(1); CHKARG3; GOAP2(y, z, x);                                       /* R x y z = y z x */
   case T_O:    GCCHECK(1); CHKARG4; GOAP2(w, x, y);                                       /* O x y z w = w x y */
-  case T_K2:   if (!HASNARGS(3)) {
-                           CHKARG2; COUNT(red_k2); GOAP(combK, x); } else {               /* K2 x y = K x */
-                           CHKARG3; GOIND(x); }                                           /* K2 x y z = *x */
-  case T_K3:   if (!HASNARGS(4)) {
-                           CHKARG2; COUNT(red_k3); GOAP(combK2, x); } else {              /* K3 x y = K2 x */
-                           CHKARG4; GOIND(x); }                                           /* K3 x y z w = *x */
-  case T_K4:   if (!HASNARGS(5)) {
-                           CHKARG2; COUNT(red_k4); GOAP(combK3, x); } else {              /* K4 x y = K3 x */
-                           CHKARG5; GOIND(x); }                                           /* K4 x y z w v = *x */
   case T_CCB:  if (!HASNARGS(4)) {
+               // NOTE: the first rule here increases full laziness by memoizing (x z) and causes crazy
+               // indir chains during bootstrap if you make it the default!
+               // NO IDEA why this is as neither this rule nor B introduce indirs since they use GOAP.
                GCCHECK(2); CHKARG3; COUNT(red_ccb); GOAP2(combB, new_ap(x, z), y);} else{ /* C'B x y z = B (x z) y */
                GCCHECK(2); CHKARG4; GOAP2(x, z, new_ap(y, w)); }                          /* C'B x y z w = x z (y w) */
 
@@ -4431,8 +4431,8 @@ MAIN
 #if GCRED
     PRINT(" GC reductions A=%"PRIcounter", K=%"PRIcounter", I=%"PRIcounter", int=%"PRIcounter" flip=%"PRIcounter"\n",
           red_a, red_k, red_i, red_int, red_flip);
-    PRINT(" special reductions B'=%"PRIcounter" K4=%"PRIcounter" K3=%"PRIcounter" K2=%"PRIcounter" C'B=%"PRIcounter", Z=%"PRIcounter", R=%"PRIcounter"\n",
-          red_bb, red_k4, red_k3, red_k2, red_ccb, red_z, red_r);
+    PRINT(" special reductions B'=%"PRIcounter" K4=%"PRIcounter" K3=%"PRIcounter" K2=%"PRIcounter" C'B=%"PRIcounter", Z=%"PRIcounter"\n",
+          red_bb, red_k4, red_k3, red_k2, red_ccb, red_z);
 #endif
   }
 #endif  /* WANT_STDIO */
