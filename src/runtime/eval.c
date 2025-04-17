@@ -324,7 +324,8 @@ typedef struct node {
 typedef struct node* NODEPTR;
 #define NIL 0
 #define HEAPREF(i) &cells[(i)]
-#define GETTAG(p) ((p)->ufun.uutag & BIT_NOTAP ? ( (p)->ufun.uutag & BIT_IND ? T_IND : (int)((p)->ufun.uutag >> TAG_SHIFT) ) : T_AP)
+#define ISINDIR(p) ((p)->ufun.uutag & BIT_IND)
+#define GETTAG(p) ((p)->ufun.uutag & BIT_NOTAP ? ( ISINDIR(p) ? T_IND : (int)((p)->ufun.uutag >> TAG_SHIFT) ) : T_AP)
 #define SETTAG(p,t) do { if (t != T_AP) { if (t == T_IND) { (p)->ufun.uutag = BIT_IND; } else { (p)->ufun.uutag = ((t) << TAG_SHIFT) | BIT_TAG; } } } while(0)
 #define GETVALUE(p) (p)->uarg.uuvalue
 #define GETDBLVALUE(p) (p)->uarg.uufloatvalue
@@ -985,6 +986,54 @@ counter_t red_bb, red_k4, red_k3, red_k2, red_ccb, red_z, red_r;
 //counter_t mark_depth;
 //counter_t max_mark_depth = 0;
 
+/* Remove indirection chain.  Assumes
+ * incoming node points to a known indirection. */
+static NODEPTR
+indir_loop(NODEPTR m)
+{
+  NODEPTR n = m;
+  int loop = 0;
+  do {
+    // Do a fixed (large) number of indirection chases.
+    for (;;) {
+      n = GETINDIR(n);
+      if (!ISINDIR(n)) break;
+#if SANITY
+      if (++loop % 1024 == 0) {
+        // printf("*"); fflush(stdout);
+        if (n == GETINDIR(n)) {
+          ERR("IND loop");
+        }
+      }
+#endif
+    }
+    NODEPTR p = m;
+    // Point whole indirection chain at n.
+    do {
+      NODEPTR t = GETINDIR(p);
+      SETINDIR(p,n);
+      p = t;
+    } while (p != n);
+  } while (ISINDIR(n));
+  // if (loop >= 1024) {
+  //   printf("\n");
+  // }
+  return n;
+}
+
+/* Follow indirections */
+static INLINE NODEPTR
+indir(NODEPTR *np)
+{
+  NODEPTR n = *np;
+  heapoffs_t l = LABEL(n);
+  if (l < T_IO_BIND || !ISINDIR(n)) {
+    return n;
+  }
+  *np = n = indir_loop(n);
+  return n;
+}
+
 /* Mark all used nodes reachable from *np, updating *np. */
 void
 mark(NODEPTR *np)
@@ -1004,24 +1053,8 @@ mark(NODEPTR *np)
   n = *np;
   tag = GETTAG(n);
   if (tag == T_IND) {
-#if SANITY
-    int loop = 0;
-    /* Skip indirections, and redirect start pointer */
-    while ((tag = GETTAG(n)) == T_IND) {
-      //      PRINT("*"); fflush(stdout);
-      n = GETINDIR(n);
-      if (loop++ > 10000000) {
-        //PRINT("%p %p %p\n", n, GETINDIR(n), GETINDIR(GETINDIR(n)));
-        ERR("IND loop");
-      }
-    }
-    //    if (loop)
-    //      PRINT("\n");
-#else  /* SANITY */
-    while ((tag = GETTAG(n)) == T_IND) {
-      n = GETINDIR(n);
-    }
-#endif  /* SANITY */
+    n = indir_loop(n);
+    tag = GETTAG(n);
     *np = n;
   }
   if (n < cells || n > cells + heap_size)
@@ -1875,7 +1908,7 @@ parse(BFILE *f)
         *nodep = x;
       } else {
         /* Sanity check */
-        if (GETTAG(*nodep) != T_IND || GETINDIR(*nodep) != NIL) ERR("shared != NIL");
+        if (!ISINDIR(*nodep) || GETINDIR(*nodep) != NIL) ERR("shared != NIL");
         SETINDIR(*nodep, x);
       }
       break;
@@ -2065,9 +2098,7 @@ void
 find_sharing(struct print_bits *pb, NODEPTR n)
 {
  top:
-  while (GETTAG(n) == T_IND) {
-    n = GETINDIR(n);
-  }
+  indir(&n);
   if (n < cells || n >= cells + heap_size) abort();
   //PRINT("find_sharing %p %llu ", n, LABEL(n));
   tag_t tag = GETTAG(n);
@@ -2154,10 +2185,7 @@ printrec(BFILE *f, struct print_bits *pb, NODEPTR n, int prefix)
 {
   int share = 0;
 
-  while (GETTAG(n) == T_IND) {
-    //putb('*', f);
-    n = GETINDIR(n);
-  }
+  indir(&n);
 
   if (test_bit(pb->shared_bits, n)) {
     /* The node is shared */
@@ -2704,17 +2732,6 @@ headutf8(struct bytestring bs, void **ret)
 
 NODEPTR evali(NODEPTR n);
 
-/* Follow indirections */
-static INLINE NODEPTR
-indir(NODEPTR *np)
-{
-  NODEPTR n = *np;
-  while (GETTAG(n) == T_IND)
-    n = GETINDIR(n);
-  *np = n;
-  return n;
-}
-
 /* Evaluate to an INT */
 static INLINE value_t
 evalint(NODEPTR n)
@@ -3209,12 +3226,19 @@ evali(NODEPTR an)
 #define CMPP(op)       do { OPPTR2(r = xp op yp); GOIND(r ? combTrue : combFalse); } while(0)
 
  top:
-  COUNT(num_reductions);
   l = LABEL(n);
   tag = l < T_IO_BIND ? l : GETTAG(n);
+  COUNT(num_reductions);
   switch (tag) {
   ind:
-  case T_IND:  n = GETINDIR(n); goto top;
+  case T_IND:  {
+    x = n;
+    n = GETINDIR(n);
+    l = LABEL(n);
+    if (l < T_IO_BIND || !ISINDIR(n)) goto top;
+    n = indir_loop(x);
+    goto top;
+  }
 
   ap2:         PUSH(n); n = FUN(n);
   ap:
@@ -3734,20 +3758,16 @@ evali(NODEPTR an)
     binint1:
       xu = (uvalue_t)GETVALUE(n);
       /* Second argument */
-      y = ARG(TOP(2));
-      while (GETTAG(y) == T_IND)
-        y = GETINDIR(y);
+      y = indir(&ARG(TOP(2)));
 #if SANITY
       if (GETTAG(y) != T_INT)
         ERR("BININT 1");
 #endif  /* SANITY */
       yu = (uvalue_t)GETVALUE(y);
-      p = FUN(TOP(1));
+      p = indir(&FUN(TOP(1)));
       POP(3);
       n = TOP(-1);
-    binint:
       switch (GETTAG(p)) {
-      case T_IND:   p = GETINDIR(p); goto binint;
       case T_ADD:   ru = xu + yu; break;
       case T_SUB:   ru = xu - yu; break;
       case T_MUL:   ru = xu * yu; break;
@@ -3790,12 +3810,10 @@ evali(NODEPTR an)
         ERR("UNINT 0");
 #endif
       xu = (uvalue_t)GETVALUE(n);
-      p = FUN(TOP(1));
+      p = indir(&FUN(TOP(1)));
       POP(2);
       n = TOP(-1);
-    unint:
       switch (GETTAG(p)) {
-      case T_IND:      p = GETINDIR(p); goto unint;
       case T_NEG:      ru = -xu; break;
       case T_INV:      ru = ~xu; break;
       case T_POPCOUNT: ru = POPCOUNT(xu); break;
@@ -3822,20 +3840,16 @@ evali(NODEPTR an)
 #endif  /* SANITY */
       xd = GETDBLVALUE(n);
       /* Second argument */
-      y = ARG(TOP(2));
-      while (GETTAG(y) == T_IND)
-        y = GETINDIR(y);
+      y = indir(&ARG(TOP(2)));
 #if SANITY
       if (GETTAG(y) != T_DBL)
         ERR("BINDBL 1");
 #endif  /* SANITY */
       yd = GETDBLVALUE(y);
-      p = FUN(TOP(1));
+      p = indir(&FUN(TOP(1)));
       POP(3);
       n = TOP(-1);
-    bindbl:
       switch (GETTAG(p)) {
-      case T_IND:   p = GETINDIR(p); goto bindbl;
       case T_FADD:  rd = xd + yd; break;
       case T_FSUB:  rd = xd - yd; break;
       case T_FMUL:  rd = xd * yd; break;
@@ -3862,12 +3876,10 @@ evali(NODEPTR an)
         ERR("UNDBL 0");
 #endif
       xd = GETDBLVALUE(n);
-      p = FUN(TOP(1));
+      p = indir(&FUN(TOP(1)));
       POP(2);
       n = TOP(-1);
-    undbl:
       switch (GETTAG(p)) {
-      case T_IND:   p = GETINDIR(p); goto undbl;
       case T_FNEG:  rd = -xd; break;
       default:
         //fprintf(stderr, "tag=%d\n", GETTAG(FUN(TOP(0))));
@@ -3890,21 +3902,16 @@ evali(NODEPTR an)
 #endif  /* SANITY */
       xbs = BSTR(n);
       /* Second argument */
-      y = ARG(TOP(2));
-      while (GETTAG(y) == T_IND)
-        y = GETINDIR(y);
+      y = indir(&ARG(TOP(2)));
 #if SANITY
       if (GETTAG(y) != T_FORPTR || FORPTR(y)->finalizer->fptype != FP_BSTR)
         ERR("BINBS 1");
 #endif  /* SANITY */
       ybs = BSTR(y);
-      p = FUN(TOP(1));
+      p = indir(&FUN(TOP(1)));
       POP(3);
       n = TOP(-1);
-    binbs:
       switch (GETTAG(p)) {
-      case T_IND:    p = GETINDIR(p); goto binbs;
-
       case T_BSAPPEND: rbs = bsappend(xbs, ybs); break;
       case T_BSAPPENDDOT: rbs = bsappenddot(xbs, ybs); break;
       case T_BSEQ:   GOIND(bscompare(xbs, ybs) == 0 ? combTrue : combFalse);
@@ -4047,8 +4054,8 @@ execio(NODEPTR *np)
     //printf("execute switch %s\n", tag_names[GETTAG(n)]);
     switch (GETTAG(n)) {
     case T_IND:
-      n = GETINDIR(n);
       TOP(0) = n;
+      n = indir(&TOP(0));
       break;
     case T_AP:
       n = FUN(n);
