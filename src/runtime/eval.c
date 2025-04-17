@@ -2286,7 +2286,7 @@ printrec(BFILE *f, struct print_bits *pb, NODEPTR n, int prefix)
     break;
   case T_PTR:
     if (prefix) {
-      char b[200]; sprintf(b,"PTR<%p>",PTR(n));
+      char b[200]; snprintf(b,199,"PTR<%p>",PTR(n));
       putsb(b, f);
     } else {
       ERR("Cannot serialize pointers");
