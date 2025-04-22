@@ -163,11 +163,11 @@ runtest:	bin/mhseval bin/gmhs tests/*.hs
 	cd tests; make alltest
 
 # Run test examples with mhs-compiled compiler
-runtestmhs: bin/mhseval bin/mhs
+runtestmhs: bin/mhseval bin/mhs bin/cpphs
 	cd tests; make MHS=../bin/mhs cache; make MHS="../bin/mhs +RTS -H4M -RTS -CR" info test errtest
 
 # Run test examples with sanitized mhs-compiled compiler
-runtestsan: bin/mhsevalsane sanitizemhs
+runtestsan: bin/mhsevalsane sanitizemhs bin/cpphs
 	cd tests; make MHS="../bin/mhssane +RTS -H4M -RTS -CR" cache
 	cd tests; make MHS="../bin/mhssane +RTS -H4M -RTS -CR" EVAL="../bin/mhsevalsane +RTS -H1M -RTS" info test errtest
 

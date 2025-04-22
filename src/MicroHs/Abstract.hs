@@ -290,18 +290,18 @@ improveT ae =
           Lit (LPrim "K3")
         else if isZ ff && isK3 aa then
           Lit (LPrim "K4")
+        else if isB ff then
+          bApp ff aa
+        else if isK ff then
+          kApp ff aa
         else
-          let
-            def =
-              case getApp aa of
-                IsApp ck e ->
-                  if isY ff && isK ck then
-                    e
-                  else
-                    kApp ff aa
-                NotApp -> kApp ff aa
-          in
-            def
+          case getApp aa of
+            IsApp ck e ->
+              if isY ff && isK ck then
+                e
+              else
+                App ff aa
+            NotApp -> App ff aa
 {-
             case getApp ff of
               IsApp xf xa ->
@@ -319,6 +319,15 @@ kApp (Lit (LPrim "K")) (App (Lit (LPrim ('K':s))) x)
   | s == "2" = App (Lit (LPrim "K3")) x
   | s == "3" = App (Lit (LPrim "K4")) x
 kApp f a = App f a
+
+bApp :: Exp -> Exp -> Exp
+bApp (Lit (LPrim "B")) (App (Lit (LPrim ('B':s))) x)
+  | s == ""  = App (Lit (LPrim "B2")) x
+  | s == "2" = App (Lit (LPrim "B3")) x
+  | s == "3" = App (Lit (LPrim "B4")) x
+  | s == "4" = App (Lit (LPrim "B5")) x
+  | s == "5" = App (Lit (LPrim "B6")) x
+bApp f a = App f a
 
 {-
 -- K I      -->  A

@@ -49,6 +49,11 @@ trans r ae =
 primTable :: [(String, AnyType)]
 primTable = [
   ("B", _primitive "B"),
+  ("B2", _primitive "B2"),
+  ("B3", _primitive "B3"),
+  ("B4", _primitive "B4"),
+  ("B5", _primitive "B5"),
+  ("B6", _primitive "B6"),
   ("O", _primitive "O"),
   ("K", _primitive "K"),
   ("C'", _primitive "C'"),

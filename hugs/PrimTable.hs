@@ -29,6 +29,11 @@ primOps =
   , comb "K" const
   , comb "I" id
   , comb "B" (\ f g x -> f (g x))
+  , comb "B2" (\ f g x1 x2 -> f (g x1 x2))
+  , comb "B3" (\ f g x1 x2 x3 -> f (g x1 x2 x3))
+  , comb "B4" (\ f g x1 x2 x3 x4 -> f (g x1 x2 x3 x4))
+  , comb "B5" (\ f g x1 x2 x3 x4 x5 -> f (g x1 x2 x3 x4 x5))
+  , comb "B6" (\ f g x1 x2 x3 x4 x5 x6 -> f (g x1 x2 x3 x4 x5 x6))
   , comb "C" (\ f g x -> f x g)
   , comb "S'" (\ k f g x -> k (f x) (g x))
   , comb "B'" (\ k f g x -> k f (g x))

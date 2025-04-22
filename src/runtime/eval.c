@@ -266,7 +266,7 @@ iswindows(void)
 #endif  /* !define(ERR) */
 
 enum node_tag { T_FREE, T_IND, T_AP, T_INT, T_DBL, T_PTR, T_FUNPTR, T_FORPTR, T_BADDYN, T_ARR,
-                T_S, T_K, T_I, T_B, T_C,
+                T_S, T_K, T_I, T_B, T_B2, T_B3, T_B4, T_B5, T_B6, T_C,
                 T_A, T_Y, T_SS, T_BB, T_CC, T_P, T_R, T_O, T_U, T_Z,
                 T_K2, T_K3, T_K4, T_CCB,
                 T_ADD, T_SUB, T_MUL, T_QUOT, T_REM, T_SUBR, T_UQUOT, T_UREM, T_NEG,
@@ -706,7 +706,8 @@ new_ap(NODEPTR f, NODEPTR a)
 /* Needed during reduction */
 NODEPTR intTable[HIGH_INT - LOW_INT];
 NODEPTR combK, combTrue, combUnit, combCons, combPair;
-NODEPTR combCC, combZ, combIOBIND, combIORETURN, combIOCCBIND, combB, combC;
+NODEPTR combCC, combZ, combIOBIND, combIORETURN, combIOCCBIND, combC;
+NODEPTR combB, combB2, combB3, combB4, combB5, combB6;
 NODEPTR combLT, combEQ, combGT;
 NODEPTR combShowExn, combU, combK2, combK3;
 NODEPTR combBININT1, combBININT2, combUNINT1;
@@ -728,6 +729,11 @@ struct {
   /* combinators */
   /* sorted by frequency in a typical program */
   { "B", T_B },
+  { "B2", T_B2 },
+  { "B3", T_B3 },
+  { "B4", T_B4 },
+  { "B5", T_B5 },
+  { "B6", T_B6 },
   { "O", T_O },
   { "K", T_K },
   { "C'", T_CC },
@@ -912,6 +918,11 @@ init_nodes(void)
     case T_P: combPair = n; break;
     case T_CC: combCC = n; break;
     case T_B: combB = n; break;
+    case T_B2: combB2 = n; break;
+    case T_B3: combB3 = n; break;
+    case T_B4: combB4 = n; break;
+    case T_B5: combB5 = n; break;
+    case T_B6: combB6 = n; break;
     case T_C: combC = n; break;
     case T_Z: combZ = n; break;
     case T_U: combU = n; break;
@@ -2231,7 +2242,7 @@ printrec(BFILE *f, struct print_bits *pb, NODEPTR n, int prefix)
     break;
   case T_PTR:
     if (prefix) {
-      char b[200]; sprintf(b,"PTR<%p>",PTR(n));
+      char b[200]; snprintf(b,199,"PTR<%p>",PTR(n));
       putsb(b, f);
     } else {
       ERR("Cannot serialize pointers");
@@ -3145,6 +3156,12 @@ evali(NODEPTR an)
   case T_I:                CHKARG1; GOIND(x);                                             /* I x = *x */
   case T_Y:                CHKARG1; GOAP(x, n);                                           /* n@(Y x) = x n */
   case T_B:    GCCHECK(1); CHKARG3; GOAP(x, new_ap(y, z));                                /* B x y z = x (y z) */
+  case T_B2:   w = combB; goto t_bn;
+  case T_B3:   w = combB2; goto t_bn;
+  case T_B4:   w = combB3; goto t_bn;
+  case T_B5:   w = combB4; goto t_bn;
+  case T_B6:   w = combB5;
+  t_bn:        GCCHECK(2); CHKARG3; GOAP2(w, x, new_ap(y, z));                            /* Bn x y z = B(n-1) x (y z) */
   case T_BB:   if (!HASNARGS(4)) {
                GCCHECK(1); CHKARG2; COUNT(red_bb); GOAP(combB, new_ap(x, y)); } else {    /* B' x y = B (x y) */
                GCCHECK(2); CHKARG4; GOAP2(x, y, new_ap(z, w)); }                          /* B' x y z w = x y (z w) */
@@ -3989,9 +4006,9 @@ execio(NODEPTR *np)
       goto ser;
     case T_IO_SERIALIZE:
       hdr = 1;
+      gc();                     /* DUBIOUS: do a GC to get possible GC reductions */
     ser:
       CHECKIO(2);
-      gc();                     /* DUBIOUS: do a GC to get possible GC reductions */
       ptr = (struct BFILE*)evalptr(ARG(TOP(1)));
       x = evali(ARG(TOP(2)));
       //x = ARG(TOP(1));
