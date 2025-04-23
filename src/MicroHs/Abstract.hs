@@ -290,6 +290,8 @@ improveT ae =
           Lit (LPrim "K3")
         else if isZ ff && isK3 aa then
           Lit (LPrim "K4")
+        else if isK ff then
+          kApp ff aa
         else
           let
             def =
@@ -298,8 +300,8 @@ improveT ae =
                   if isY ff && isK ck then
                     e
                   else
-                    kApp ff aa
-                NotApp -> kApp ff aa
+                    tApp ff aa
+                NotApp -> tApp ff aa
           in
             def
 {-
@@ -319,6 +321,18 @@ kApp (Lit (LPrim "K")) (App (Lit (LPrim ('K':s))) x)
   | s == "2" = App (Lit (LPrim "K3")) x
   | s == "3" = App (Lit (LPrim "K4")) x
 kApp f a = App f a
+
+tApp :: Exp -> Exp -> Exp
+tApp f a = cA a where
+  -- (B^n C) (T n) = T (n+1)
+  cA (Lit (LPrim "P")) = cF 2 2 f
+  cA (App (Lit (LPrim "T")) (Lit (LInt n))) = cF n n f
+  cA _ = App f a
+  cF :: Int -> Int -> Exp -> Exp
+  cF n 0 (Lit (LPrim "C")) = App (Lit (LPrim "T")) (Lit (LInt (n+1)))
+  cF _ 0 _ = App f a
+  cF n i (App (Lit (LPrim "B")) f') = cF n (i-1) f'
+  cF _ _ _ = App f a
 
 {-
 -- K I      -->  A

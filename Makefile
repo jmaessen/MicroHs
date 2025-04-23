@@ -159,15 +159,15 @@ bootstrapcpphs: bin/mhs cpphssrc/malcolm-wallace-universe/.git
 	MHSCPPHS=$(USECPPHS) bin/mhs -z -XCPP '-DMIN_VERSION_base(x,y,z)=((x)<4||(x)==4&&(y)<19||(x)==4&&(y)==19&&(z)<=1)' -icpphscompat -icpphssrc/malcolm-wallace-universe/polyparse-1.12/src -icpphssrc/malcolm-wallace-universe/cpphs-1.20.9 cpphssrc/malcolm-wallace-universe/cpphs-1.20.9/cpphs.hs -ogenerated/cpphs.c
 
 # Run test examples with ghc-compiled compiler
-runtest:	bin/mhseval bin/gmhs tests/*.hs
+runtest:	bin/mhseval bin/gmhs bin/cpphs tests/*.hs
 	cd tests; make alltest
 
 # Run test examples with mhs-compiled compiler
-runtestmhs: bin/mhseval bin/mhs
+runtestmhs: bin/mhseval bin/mhs bin/cpphs tests/*.hs
 	cd tests; make MHS=../bin/mhs cache; make MHS="../bin/mhs +RTS -H4M -RTS -CR" info test errtest
 
 # Run test examples with sanitized mhs-compiled compiler
-runtestsan: bin/mhsevalsane sanitizemhs
+runtestsan: bin/mhsevalsane sanitizemhs bin/cpphs tests/*.hs
 	cd tests; make MHS="../bin/mhssane +RTS -H4M -RTS -CR" cache
 	cd tests; make MHS="../bin/mhssane +RTS -H4M -RTS -CR" EVAL="../bin/mhsevalsane +RTS -H1M -RTS" info test errtest
 
