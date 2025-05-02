@@ -300,6 +300,8 @@ improveT ae =
           Lit (LPrim "K3")
         else if isZ ff && isK3 aa then
           Lit (LPrim "K4")
+        else if isK ff then kApp ff aa
+        else if isC ff then cApp ff aa
         else
           let
             def =
@@ -307,9 +309,8 @@ improveT ae =
                 IsApp ck e ->
                   if isY ff && isK ck then
                     e
-                  else
-                    kApp ff aa
-                NotApp -> kApp ff aa
+                  else bbcApp ff ck e
+                NotApp -> App ff aa
           in
             def
 {-
@@ -324,11 +325,27 @@ improveT ae =
 
 
 kApp :: Exp -> Exp -> Exp
-kApp (Lit (LPrim "K")) (App (Lit (LPrim ('K':s))) x)
+kApp _ (App (Lit (LPrim ('K':s))) x)
   | s == ""  = App (Lit (LPrim "K2")) x
   | s == "2" = App (Lit (LPrim "K3")) x
   | s == "3" = App (Lit (LPrim "K4")) x
-kApp f a = App f a
+kApp k a = App k a
+
+cApp :: Exp -> Exp -> Exp
+cApp _ (App (App (Lit (LPrim "C")) f) x) = app2 (Lit (LPrim "C2")) f x
+cApp c a = App c a
+
+-- B (B^n C) ((B^n C) e) = B^n C2 e
+bbcApp :: Exp -> Exp -> Exp -> Exp
+bbcApp f h e =
+  let d = App f (App h e)
+      loop k (App (Lit (LPrim "B")) g') (App (Lit (LPrim "B")) h') =
+        loop (k . App (Lit (LPrim "B"))) g' h'
+      loop k (Lit (LPrim "C")) (Lit (LPrim "C")) = App (k (Lit (LPrim "C2"))) e
+      loop _ _ _ = d
+  in case f of
+       App (Lit (LPrim "B")) g -> loop id g h
+       _ -> d
 
 {-
 -- K I      -->  A

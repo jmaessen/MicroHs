@@ -266,7 +266,7 @@ iswindows(void)
 #endif  /* !define(ERR) */
 
 enum node_tag { T_FREE, T_IND, T_AP, T_INT, T_DBL, T_PTR, T_FUNPTR, T_FORPTR, T_BADDYN, T_ARR,
-                T_S, T_K, T_I, T_B, T_C,
+                T_S, T_K, T_I, T_B, T_C, T_C2,
                 T_A, T_Y, T_SS, T_BB, T_CC, T_P, T_R, T_O, T_U, T_Z, T_J,
                 T_K2, T_K3, T_K4, T_CCB,
                 T_ADD, T_SUB, T_MUL, T_QUOT, T_REM, T_SUBR, T_UQUOT, T_UREM, T_NEG,
@@ -732,6 +732,7 @@ struct {
   { "K", T_K },
   { "C'", T_CC },
   { "C", T_C },
+  { "C2", T_C2 },
   { "A", T_A },
   { "S'", T_SS },
   { "P", T_P },
@@ -2232,7 +2233,7 @@ printrec(BFILE *f, struct print_bits *pb, NODEPTR n, int prefix)
     break;
   case T_PTR:
     if (prefix) {
-      char b[200]; sprintf(b,"PTR<%p>",PTR(n));
+      char b[200]; snprintf(b,200,"PTR<%p>",PTR(n));
       putsb(b, f);
     } else {
       ERR("Cannot serialize pointers");
@@ -3075,6 +3076,7 @@ evali(NODEPTR an)
 #define GOIND(x) do { NODEPTR _x = (x); SETIND(n, _x); n = _x; goto top; } while(0)
 #define GOAP(f,a) do { FUN((n)) = (f); ARG((n)) = (a); goto ap; } while(0)
 #define GOAP2(f,a,b) do { FUN((n)) = new_ap((f), (a)); ARG((n)) = (b); goto ap2; } while(0)
+#define GOAP3(f,a,b,c) do { FUN((n)) = new_ap(new_ap((f), (a)),(b)); ARG((n)) = (c); goto ap3; } while(0)
 /* CHKARGN checks that there are at least N arguments.
  * It also
  *  - sets n to the "top" node
@@ -3121,6 +3123,7 @@ evali(NODEPTR an)
   }
   COUNT(num_reductions);
   switch (tag) {
+  ap3:         PUSH(n); n = FUN(n);
   ap2:         PUSH(n); n = FUN(n);
   ap:
   case T_AP:   PUSH(n); n = FUN(n); goto top;
@@ -3155,6 +3158,7 @@ evali(NODEPTR an)
                            CHKARG3; GOAP(x, y); }                                         /* Z x y z = x y */
 //case T_J:                CHKARG3; GOAP(z, x);                                           /* J x y z = z x */
   case T_C:    GCCHECK(1); CHKARG3; GOAP2(x, z, y);                                       /* C x y z = x z y */
+  case T_C2:   GCCHECK(2); CHKARG4; GOAP3(x, w, y, z);                                    /* C x y z w = x w y z */
   case T_CC:   GCCHECK(2); CHKARG4; GOAP2(x, new_ap(y, w), z);                            /* C' x y z w = x (y w) z */
   case T_P:    GCCHECK(1); CHKARG3; GOAP2(z, x, y);                                       /* P x y z = z x y */
   case T_R:    if(!HASNARGS(3)) {
